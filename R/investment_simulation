@@ -1,0 +1,135 @@
+#simulacoes para verificar se vale a penar ter reserva de oportunidade para comprar acoes 
+#usando dados mensais do sp500 desde 1950
+#fonte dos dados https://www.multpl.com/s-p-500-historical-prices/table/by-month
+
+
+#simular um investimento por 30 anos de um valor fixo mensal (e.g. $5000)
+#variar a reserva de oportunidade de 0 ate 40%
+#variar a diferenca entre o preco medio e o preco atual do indice para gastar a reserva
+#de oportunidade de 5 ate 40%
+
+
+#periodo de inicio pode ser entre 1950 e 1993 (o investimento sera por 30 anos)
+
+
+
+spdt<-read.csv2("E:/projetos/lago_psj/invest_sim/data/sp500_mensal.csv", header = T)
+colnames(spdt)<-c("mes","preco")
+spdt$preco<-gsub(",","",spdt$preco)
+spdt$preco<-as.numeric(spdt$preco)
+
+spdt<-spdt[nrow(spdt):1,]
+
+income<-5000
+reserv<-seq(0,0.4,0.01)
+crit<-seq(0.0,0.4,0.01) #usar o 0 e 0 nos dois criterios como o desempenho base
+iter<-1000 #numero de repeticoes para rodar em cada nivel de reserva e de criterio de preco a testar
+
+totAcumDf<-matrix(NA,nrow=length(reserv),ncol=length(crit))
+colnames(totAcumDf)<-crit
+rownames(totAcumDf)<-reserv
+
+i=6
+j=6
+k=1
+l=1
+
+for(i in 1:length(reserv)){
+  
+  print(paste0("#######################   ",i-length(reserv)))
+  
+  for(j in 1:length(crit)){
+    
+    valorTotalAcumulado<-NULL
+    
+    for(k in 1:iter){
+      
+      valorDinh<-0
+      cotas<-0
+      precoMedio<-NULL
+      
+      #periodo de inicio pode ser entre 1950 e 1993 (o investimento sera por 30 anos)
+      mesIni<-sample(1:515,1)
+      
+      for(l in 1:360){ #360 meses 30 anos
+        
+        #preco do indice
+        preco<-spdt$preco[mesIni+l]
+        
+        #recebendo salario
+        valorDinh<-valorDinh+income
+        
+        valorCotasAtual<-cotas*preco
+        
+        objetivoCotas<-(valorDinh+valorCotasAtual)*(1-reserv[i])
+        
+        
+        
+        valorAcomprar<-objetivoCotas-valorCotasAtual
+        #se o numero de cotas que tenho vezes o preco medio das minhas acoes na data atual
+        #eh um valor menor que a proporcao dos meus bens que decidi manter em acoes compradas
+        #devo comprar acoes com o dinhero que sobra
+        
+        if(valorAcomprar>0){
+          
+          compra<-valorAcomprar/preco
+          
+          if(is.numeric(precoMedio))precoMedio<-weighted.mean(c(precoMedio,preco),c(cotas,compra)) #calculando o preco medio pela ponderacao entre o preco que ja temos + a nova compra do mes
+          if(is.null(precoMedio))precoMedio<-preco #primeiro mes ainda nao tem preco medio
+          
+          
+          cotas<-cotas+(valorAcomprar/preco)
+          
+          valorDinh<-valorDinh-valorAcomprar
+          
+        }
+        
+        #se o preco das acoes esta abaixo do preco medio que tenho ate agora pela margem
+        #que decidi, gasto toda minha reserva de opotunidade fazendo um preco medio menor
+        
+        if((1-(preco/precoMedio))>=crit[j]){
+          
+          valorAcomprar<-valorDinh
+          
+          
+          compra<-valorAcomprar/preco
+          
+          precoMedio<-weighted.mean(c(precoMedio,preco),c(cotas,compra)) #calculando o preco medio pela ponderacao entre o preco que ja temos + a nova compra do mes
+          
+          cotas<-cotas+(valorAcomprar/preco)
+          
+          valorDinh<-valorDinh-valorAcomprar
+          
+          
+        }
+        
+      }
+      
+      valorTotalAcumulado[k]<-(cotas*preco) + valorDinh
+      
+    }
+    
+    totAcumDf[i,j]<-mean(valorTotalAcumulado)
+    
+    print(j)
+  }
+  
+}
+
+
+
+
+
+saveRDS(totAcumDf,"E:/projetos/lago_psj/invest_sim/data/valores_medios_acum_v2.RDS")
+
+
+df<-expand.grid(rownames(totAcumDf),colnames(totAcumDf))
+
+df$z<-NA
+
+colnames(df)<-c("y","x","z")
+
+for(i in 1:nrow(df)){df[i,3]<- totAcumDf[rownames(totAcumDf)==df[i,1], colnames(totAcumDf)==df[i,2]] }
+
+library(plotly)
+plot_ly(z = ~xtabs(z ~ x + y, data = df)) %>% add_surface()
